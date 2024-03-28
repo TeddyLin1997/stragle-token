@@ -32,22 +32,41 @@ contract StragleToken is ERC20, Ownable {
         ERC20("Stragle Token", "STRAG")
         Ownable(msg.sender)
     {
-        maxSupply = 2000000 * (10 ** 18);
+        maxSupply = 3600000 * (10 ** 18);
         USDT_TOKEN = IERC20(USDT_ADDRESS);
     }
 
-    function getBlockTimestamp () external  view returns (uint256) {
-        return block.timestamp;
-    }
+    event Mint(address indexed staker, uint256 tokenAmount, uint256 time);
+    event Stake(address indexed staker, uint256 tokenAmount, uint256 time);
+    event Unstake(address indexed staker, uint256 time);
+    event Withdraw(address indexed staker, uint256 tokenAmount, uint256 time);
+    event ClaimRewards(address indexed staker, uint256 rewards, uint256 time);
+
+    event OwnerDeposit(address indexed owner, uint256 rewards, uint256 time);
+    event OwnerWithdraw(address indexed owner, uint256 rewards, uint256 time);
 
     // USDT Balance
     function getUSDTBalance() external view returns (uint256) {
         return USDT_TOKEN.balanceOf(address(this));
     }
 
-    // Minted STRAG amount
-    function getTotalSupply() external view returns (uint256) {
-        return totalSupply();
+    // get Address Rewards
+    function getAddressRewards() public view returns (uint256) {
+        Staker memory staker = stakers[msg.sender];
+
+        uint256 elapsedTime = block.timestamp - staker.rewardUpdateTime;
+        uint256 newRewards = staker.balance.mul(elapsedTime).mul(APY).div(SECONDS_PER_YEAR).div(100);
+        return staker.reward + newRewards;
+    }
+
+    // can unstake time
+    function getAddressCanUnstakeTime() public view returns (uint256) {
+        return stakers[msg.sender].unstakeTime;
+    }
+
+    // staker withdraw time
+    function getAddressWithdrawTime() public view returns (uint256) {
+        return stakers[msg.sender].unlockTime;
     }
 
     // Mint token
@@ -58,15 +77,7 @@ contract StragleToken is ERC20, Ownable {
         require(USDT_TOKEN.transferFrom(msg.sender, address(this), amount), "USDT Transfer failed, ensure you have approved the correct allowance");
 
         _mint(msg.sender, amount);
-    }
-
-    // get Address Rewards
-    function getAddressRewards() public view returns (uint256) {
-        Staker memory staker = stakers[msg.sender];
-
-        uint256 elapsedTime = block.timestamp - staker.rewardUpdateTime;
-        uint256 newRewards = staker.balance.mul(elapsedTime).mul(APY).div(SECONDS_PER_YEAR).div(100);
-        return staker.reward + newRewards;
+        emit Mint(msg.sender, amount, block.timestamp);
     }
 
     // staking
@@ -79,45 +90,72 @@ contract StragleToken is ERC20, Ownable {
         updateRewards(msg.sender);
         stakers[msg.sender].balance += amount;
         stakers[msg.sender].unstakeTime = block.timestamp + 365 days; // stake 至少一年
+
+        emit Stake(msg.sender, amount, block.timestamp);
     }
 
     // unstake
     function unstake() external {
         require(stakers[msg.sender].unstakeTime <= block.timestamp, "Staking is still locked");
-        require(stakers[msg.sender].balance <= 0, "Insufficient balance");
+        require(stakers[msg.sender].balance > 0, "Insufficient balance");
 
         stakers[msg.sender].unlockTime = block.timestamp + 180 days;
+
+        emit Unstake(msg.sender, block.timestamp);
     }
 
-
-    // withdraw token
-    function withdrawStake() external {
+    // withdraw 
+    function withdraw() external {
         require(stakers[msg.sender].unlockTime <= block.timestamp, "Token unlock");
-        require(stakers[msg.sender].balance >= 0, "Insufficient balance");
+        require(stakers[msg.sender].balance > 0, "Insufficient balance");
 
         uint balance = stakers[msg.sender].balance;
         stakers[msg.sender].balance = 0;
         transfer(msg.sender, balance);
+
+        emit Withdraw(msg.sender, balance, block.timestamp);
     }
 
-    // withdraw rewards
-    function withdrawRewards() external {
+    // claim rewards
+    function claimRewards() external {
         updateRewards(msg.sender);
 
         uint256 rewards = stakers[msg.sender].reward;
         require(rewards > 0, "No rewards to withdraw");
 
         stakers[msg.sender].reward = 0;
-        USDT_TOKEN.transferFrom(address(this), msg.sender, rewards);
+        USDT_TOKEN.transfer(msg.sender, rewards);
+
+        emit ClaimRewards(msg.sender, rewards, block.timestamp);
     }
 
     // update staker rewards
     function updateRewards(address stakerAddress) internal {
         Staker storage staker = stakers[stakerAddress];
+
         uint256 elapsedTime = block.timestamp - staker.rewardUpdateTime;
         staker.rewardUpdateTime = block.timestamp;
 
         uint256 newRewards = staker.balance.mul(elapsedTime).mul(APY).div(SECONDS_PER_YEAR).div(100);
-        staker.reward.add(newRewards);        
+        staker.reward = staker.reward.add(newRewards);
+    }
+
+    // Owner
+    function ownerDeposit(uint256 amount) external onlyOwner {
+        require(USDT_TOKEN.transferFrom(msg.sender, address(this), amount), "USDT Transfer failed, ensure you have approved the correct allowance");
+
+        emit OwnerDeposit(msg.sender, amount, block.timestamp);
+    }
+
+    function ownerWithdraw(uint256 amount) external onlyOwner {
+        require(amount <= USDT_TOKEN.balanceOf(address(this)), "USDT Transfer failed, ensure you have approved the correct allowance");
+
+        USDT_TOKEN.transfer(msg.sender, amount);
+
+        emit OwnerWithdraw(msg.sender, amount, block.timestamp);
+    }
+
+    function renounceOwnership() public pure override {
+        revert("renounceOwnership disabled");
     }
 }
