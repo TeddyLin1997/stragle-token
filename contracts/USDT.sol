@@ -8,7 +8,7 @@ import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
 
 contract Tether1USD is ERC20, Ownable {
     constructor()
-        ERC20("Tether1 USD", "UUSDT")
+        ERC20("mTether USD", "mUSDT")
         Ownable(msg.sender)
     {
         _mint(msg.sender, 10000000 * 10 ** decimals());
@@ -16,5 +16,9 @@ contract Tether1USD is ERC20, Ownable {
 
     function mint(address to, uint256 amount) public onlyOwner {
         _mint(to, amount);
+    }
+
+    function decimals() public view virtual override returns (uint8) {
+        return 6;
     }
 }

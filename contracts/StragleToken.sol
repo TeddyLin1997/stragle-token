@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
-contract StragleToken is ERC20, Ownable {
+contract StragleToken is ERC20Upgradeable, OwnableUpgradeable, UUPSUpgradeable {
     using SafeMath for uint256;
 
-    // 主網地址
-    address constant USDT_ADDRESS = 0x3e608899Ef527a8CD78B6498e58258b76CC95E97;
+    address constant USDT_ADDRESS = 0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9;
     uint256 public constant APY = 12;
     uint256 public constant SECONDS_PER_YEAR = 365 days;
 
@@ -27,13 +27,18 @@ contract StragleToken is ERC20, Ownable {
         uint256 firstJoinTime;
     }
 
-    constructor()
-        ERC20("Stragle Token", "STRAG")
-        Ownable(msg.sender)
-    {
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize() initializer public {
+        __ERC20_init("Stragle Token", "STRAG");
+        __Ownable_init(msg.sender);
+        __UUPSUpgradeable_init();
+
         maxSupply = 5000000 * (10 ** 18);
         USDT_TOKEN = IERC20(USDT_ADDRESS);
-        _mint(msg.sender, 1500000);
+        _mint(msg.sender, 1500000 * (10 ** 18));
     }
 
     event Mint(address indexed staker, uint256 tokenAmount, uint256 time);
@@ -41,18 +46,18 @@ contract StragleToken is ERC20, Ownable {
     event Unstake(address indexed staker, uint256 tokenAmount, uint256 time);
     event ClaimRewards(address indexed staker, uint256 rewards, uint256 time);
 
-    // Mint
+    // Mint (amount decimals = 6)
     function mint(uint256 amount) external  {
         require(amount > 0, "Amount must be > 0");
-        require((totalSupply().add(amount)) <= maxSupply, "Exceeds maximum supply");
+        require((totalSupply().add(amount * (10 ** 12))) <= maxSupply, "Exceeds maximum supply");
         require(USDT_TOKEN.allowance(msg.sender, address(this)) >= amount, "Not allowed to spend");
         require(USDT_TOKEN.transferFrom(msg.sender, address(this), amount), "USDT Transfer failed, ensure you have approved the correct allowance");
 
-        _mint(msg.sender, amount);
-        emit Mint(msg.sender, amount, block.timestamp);
+        _mint(msg.sender, amount * (10 ** 12));
+        emit Mint(msg.sender, amount * (10 ** 12), block.timestamp);
     }
 
-    // Stake
+    // Stake (amount decimals = 18)
     function stake(uint256 amount) external {
         require(amount > 0, "Amount must be greater than 0");
         require(allowance(msg.sender, address(this)) >= amount, "Not allowed to spend");
@@ -66,14 +71,14 @@ contract StragleToken is ERC20, Ownable {
         emit Stake(msg.sender, amount, block.timestamp);
     }
 
-    // Unstake 
+    // Unstake (amount decimals = 18)
     function unstake(uint256 amount) external {
         require(amount > 0, "Amount must be greater than 0");
         require(stakers[msg.sender].balance > 0, "Insufficient balance");
-        require(stakers[msg.sender].balance > amount, "Exceeds balance");
+        require(stakers[msg.sender].balance >= amount, "Exceeds balance");
 
         stakers[msg.sender].balance -= amount;
-        transfer(msg.sender, amount);
+        _transfer(address(this), msg.sender, amount);
         updateRewards(msg.sender);
 
         emit Unstake(msg.sender, amount, block.timestamp);
@@ -87,7 +92,7 @@ contract StragleToken is ERC20, Ownable {
         stakers[msg.sender].reward = 0;
         USDT_TOKEN.transfer(msg.sender, rewards);
 
-        emit ClaimRewards(msg.sender, rewards, block.timestamp);
+        emit ClaimRewards(msg.sender, rewards * (10 ** 12), block.timestamp);
     }
 
     // update staker rewards
@@ -97,11 +102,12 @@ contract StragleToken is ERC20, Ownable {
         uint256 elapsedTime = block.timestamp - staker.rewardUpdateTime;
         staker.rewardUpdateTime = block.timestamp;
 
-        uint256 newRewards = staker.balance.mul(elapsedTime).mul(APY).div(SECONDS_PER_YEAR).div(100);
+        // (balance 18) * 12% / seconds / 10 ** 12
+        uint256 newRewards = staker.balance.mul(elapsedTime).mul(APY).div(100).div(SECONDS_PER_YEAR).div(10 ** 12);
         staker.reward = staker.reward.add(newRewards);
     }
 
-    // Owner
+    // Owner (amount decimals = 6)
     function ownerWithdraw(uint256 amount) external onlyOwner {
         require(amount <= USDT_TOKEN.balanceOf(address(this)), "USDT Transfer failed, ensure you have approved the correct allowance");
 
@@ -111,4 +117,10 @@ contract StragleToken is ERC20, Ownable {
     function renounceOwnership() public pure override {
         revert("renounceOwnership disabled");
     }
+
+    // upgrade
+    function _authorizeUpgrade(address newImplementation) internal onlyOwner override {
+
+    }
+
 }
