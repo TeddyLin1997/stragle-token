@@ -27,9 +27,13 @@ contract StragleToken is ERC20Upgradeable, OwnableUpgradeable, UUPSUpgradeable {
         uint256 firstJoinTime;
     }
 
+    uint256 public startTime = 0;
+
     constructor() {
         _disableInitializers();
     }
+
+
 
     function initialize() initializer public {
         __ERC20_init("Stragle Token", "STRAG");
@@ -97,14 +101,16 @@ contract StragleToken is ERC20Upgradeable, OwnableUpgradeable, UUPSUpgradeable {
 
     // update staker rewards
     function updateRewards(address stakerAddress) internal {
-        Staker storage staker = stakers[stakerAddress];
+            Staker storage staker = stakers[stakerAddress];
 
-        uint256 elapsedTime = block.timestamp - staker.rewardUpdateTime;
-        staker.rewardUpdateTime = block.timestamp;
+            uint256 elapsedTime = block.timestamp - (startTime > staker.rewardUpdateTime ? startTime : staker.rewardUpdateTime);
+            staker.rewardUpdateTime = block.timestamp;
 
-        // (balance 18) * 12% / seconds / 10 ** 12
-        uint256 newRewards = staker.balance.mul(elapsedTime).mul(APY).div(100).div(SECONDS_PER_YEAR).div(10 ** 12);
-        staker.reward = staker.reward.add(newRewards);
+        if (startTime > 0) {
+            // (balance 18) * 12% / seconds / 10 ** 12
+            uint256 newRewards = staker.balance.mul(elapsedTime).mul(APY).div(100).div(SECONDS_PER_YEAR).div(10 ** 12);
+            staker.reward = staker.reward.add(newRewards);
+        }
     }
 
     // Owner (amount decimals = 6)
@@ -112,6 +118,14 @@ contract StragleToken is ERC20Upgradeable, OwnableUpgradeable, UUPSUpgradeable {
         require(amount <= USDT_TOKEN.balanceOf(address(this)), "USDT Transfer failed, ensure you have approved the correct allowance");
 
         USDT_TOKEN.transfer(msg.sender, amount);
+    }
+
+    function setStartTime () external onlyOwner {
+        startTime = block.timestamp;
+    }
+
+    function cancelStartTime () external onlyOwner {
+        startTime = 0;
     }
 
     function renounceOwnership() public pure override {
