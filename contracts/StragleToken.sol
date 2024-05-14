@@ -11,7 +11,8 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 contract StragleToken is ERC20Upgradeable, OwnableUpgradeable, UUPSUpgradeable {
     using SafeMath for uint256;
 
-    address constant USDT_ADDRESS = 0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9;
+    // address constant USDT_ADDRESS = 0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9;
+    address constant USDT_ADDRESS = 0xA0419a28903961BdCa6999c4589Afc897a0211f4;
     uint256 public constant APY = 12;
     uint256 public constant SECONDS_PER_YEAR = 365 days;
 
@@ -93,6 +94,7 @@ contract StragleToken is ERC20Upgradeable, OwnableUpgradeable, UUPSUpgradeable {
         updateRewards(msg.sender);
         uint256 rewards = stakers[msg.sender].reward;
 
+        require(rewards > 0, "Rewards must be greater than 0");
         stakers[msg.sender].reward = 0;
         USDT_TOKEN.transfer(msg.sender, rewards);
 
